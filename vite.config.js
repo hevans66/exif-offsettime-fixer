@@ -37,6 +37,9 @@ export default defineConfig({
           },
         ],
       },
+      devOptions: {
+        enabled: false,
+      },
       manifest: {
         name: 'EXIF OffsetTime Fixer',
         short_name: 'EXIF OffsetTime Fixer',

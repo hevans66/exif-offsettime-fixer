@@ -350,11 +350,19 @@ function App() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black">
       <div className="container mx-auto px-4 py-8">
-        <h1 className="text-4xl font-bold text-center text-gray-100 mb-8 drop-shadow-lg tracking-wider">
+        <h1 className="text-4xl font-bold text-center text-gray-100 mb-2 drop-shadow-lg tracking-wider">
           <span className="bg-gradient-to-r from-gray-100 to-gray-300 bg-clip-text text-transparent">
             EXIF OffsetTime Fixer
           </span>
         </h1>
+        <div className="flex justify-center mb-6">
+          <a
+            href="https://github.com/hevans66/exif-offsettime-fixer/blob/main/README.md"
+            className="text-xs text-blue-300 underline hover:text-blue-200 transition"
+          >
+            Why?
+          </a>
+        </div>
 
         {/* Offset Time Input */}
         <div className="max-w-md mx-auto mb-8">
@@ -506,6 +514,9 @@ function App() {
             </div>
           )}
         </main>
+        <footer className="text-center text-gray-400 text-sm mt-8 bottom-0 inset-x-0">
+          <a href="https://render.com" className="text-blue-300 hover:text-blue-200 transition">Deployed on Render</a> and <a href="https://heyoncall.com" className="text-blue-300 hover:text-blue-200 transition">Monitored with HeyOnCall</a>.
+        </footer>
       </div>
     </div>
   )
