@@ -376,7 +376,7 @@ function App() {
           </p>
         </div>
 
-        {!permissionGranted && (
+        {directoryHandle && !permissionGranted && (
           <div className="bg-gray-800/95 backdrop-blur-sm rounded-3xl p-4 md:p-8 shadow-2xl border border-gray-700 -mx-4 md:mx-0 flex flex-col items-center justify-center mb-6">
             <p className="text-gray-300 mb-4 text-center">
               Permission is required to access the folder. Please grant permission.
