@@ -9,6 +9,7 @@ function App() {
   const [offsetTime, setOffsetTime] = useState('+00:00')
   const [directoryHandle, setDirectoryHandle] = useState(null)
   const [permissionGranted, setPermissionGranted] = useState(false)
+  const [selectedIds, setSelectedIds] = useState(new Set())
 
   // Function to get timezone offset from user's location
   const detectUserTimezone = () => {
@@ -133,6 +134,7 @@ function App() {
   }
 
   const loadImagesFromFileHandle = async (dirHandle) => {
+    setImages([])
     try {
       setIsLoading(true)
 
@@ -208,10 +210,6 @@ function App() {
     }
   }
 
-  const getImagesWithoutOffsetTime = () => {
-    return images.filter(img => !img.exif?.OffsetTime)
-  }
-
   const modifyExifData = async (file, offsetTime) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader()
@@ -265,13 +263,9 @@ function App() {
 
   const writeFileDirectly = async (filename, blob) => {
     try {
-      // Check if File System Access API is available
-      if (!('showDirectoryPicker' in window)) {
-        throw new Error('File System Access API not supported in this browser')
-      }
 
       // Create or get the file handle
-      const fileHandle = await dirHandle.getFileHandle(filename, { create: true })
+      const fileHandle = await directoryHandle.getFileHandle(filename, { create: true })
 
       // Create a writable stream
       const writable = await fileHandle.createWritable()
@@ -282,51 +276,43 @@ function App() {
       // Close the stream
       await writable.close()
 
-      return true
+      // return true
     } catch (error) {
       console.error('Error writing file:', error)
       return false
     }
   }
 
-  const handleImageClick = async (image) => {
-    // Only process images that don't have OffsetTime
-    if (image.exif?.OffsetTime) {
-      return
-    }
+  // Selection handling
+  const toggleSelect = (image) => {
+    if (image.exif?.OffsetTime) return
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(image.id)) next.delete(image.id)
+      else next.add(image.id)
+      return next
+    })
+  }
 
-    setProcessingImages(true)
+  const clearSelection = () => setSelectedIds(new Set())
 
+  const applyOffsetToSelected = async () => {
+    if (selectedIds.size === 0) return
     try {
-      // Check if File System Access API is available
-      if (!('showDirectoryPicker' in window)) {
-        throw new Error('File System Access API not supported in this browser. Please use Chrome or Edge.')
+      // Process selected images sequentially for stability
+      for (const image of images) {
+        if (!selectedIds.has(image.id)) continue
+        if (image.exif?.OffsetTime) continue
+        try {
+          const modifiedBlob = await modifyExifData(image.file, offsetTime)
+          await writeFileDirectly(image.name, modifiedBlob)
+        } catch (e) {
+          console.error('Failed processing', image.name, e)
+        }
       }
-
-      // Modify the EXIF data with -07:00 offset
-      const modifiedBlob = await modifyExifData(image.file, offsetTime)
-
-      const modifiedExif = await exifr.parse(modifiedBlob, ['OffsetTime', 'TimeZoneOffset', "OffsetTimeOriginal", "OffsetTimeDigitized"])
-      console.log(modifiedExif)
-
-      // Write directly to file system
-      const success = await writeFileDirectly(image.name, modifiedBlob)
-
-      if (!success) {
-        throw new Error('Failed to write file. Please check file permissions.')
-      }
-
-      // Update the image in the state
-      setImages(prev => prev.map(img =>
-        img.id === image.id
-          ? { ...img, exif: { ...img.exif, OffsetTime: offsetTime } }
-          : img
-      ))
-
-    } catch (err) {
-      console.error(`Error processing ${image.name}:`, err)
     } finally {
-      setProcessingImages(false)
+      clearSelection()
+      loadImagesFromFileHandle(directoryHandle)
     }
   }
 
@@ -334,17 +320,6 @@ function App() {
     if (!image.exif) return { status: 'no-exif', text: 'No EXIF data', color: 'text-gray-400' }
     if (!image.exif.OffsetTime) return { status: 'no-offset', text: 'Missing OffsetTime', color: 'text-amber-400' }
     return { status: 'has-offset', text: `Offset: ${image.exif.OffsetTime}`, color: 'text-emerald-400' }
-  }
-
-  const formatLastModified = (timestamp) => {
-    const date = new Date(timestamp)
-    const now = new Date()
-    const diffHours = Math.round((now - date) / (1000 * 60 * 60))
-
-    if (diffHours < 1) return 'Just now'
-    if (diffHours < 24) return `${diffHours} hours ago`
-    const diffDays = Math.round(diffHours / 24)
-    return `${diffDays} days ago`
   }
 
   return (
@@ -358,7 +333,7 @@ function App() {
         <div className="flex justify-center mb-6">
           <a
             href="https://github.com/hevans66/exif-offsettime-fixer/blob/main/README.md"
-            className="text-xs text-blue-300 underline hover:text-blue-200 transition"
+            className="text-xs text-blue-300 underline"
           >
             Why?
           </a>
@@ -390,7 +365,7 @@ function App() {
               Permission is required to access the folder. Please grant permission.
             </p>
             <button
-              className="bg-gray-700 hover:bg-gray-600 text-gray-200 px-4 py-2 rounded-full font-semibold transition-all duration-300 hover:scale-105 hover:shadow-lg border border-gray-600"
+              className="bg-gray-700 hover:bg-gray-600 text-gray-200 px-4 py-2 rounded-full font-semibold border border-gray-600"
               onClick={async () => {
                 if (directoryHandle) {
                   await requestFilePermission(directoryHandle)
@@ -402,123 +377,108 @@ function App() {
           </div>
         )}
 
-        <main className="max-w-7xl mx-auto px-4 pb-8">
-          {images.length === 0 ? (
-            isLoading ? (
-              <div className="text-center py-8">
-                <div className="w-12 h-12 border-4 border-gray-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                <p className="text-gray-400">Loading images...</p>
-              </div>
-            ) : (
+        {isLoading ? (
+          <div className="text-center py-8">
+            <div className="w-12 h-12 border-4 border-gray-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-400">Loading images...</p>
+          </div>
+        ) : (
+          <main className="max-w-7xl mx-auto px-4 pb-8">
+            {images.length === 0 ? (
               <div className="flex justify-center items-center">
-                <div className="bg-gray-800/95 backdrop-blur-sm rounded-3xl p-8 md:p-12 text-center cursor-pointer transition-all duration-300 hover:scale-105 hover:shadow-2xl border-2 border-dashed border-gray-600 hover:border-gray-500 max-w-lg w-full"
+                <div className="bg-gray-800/95 backdrop-blur-sm rounded-3xl p-8 md:p-12 text-center cursor-pointer  border-2 border-dashed border-gray-600 hover:border-gray-500 max-w-lg w-full"
                   onClick={showFolderSelector}
                 >
                   <div className="text-6xl mb-4">📁</div>
                   <h2 className="text-2xl md:text-3xl font-bold text-gray-200 mb-2">
                     Select Folder
                   </h2>
+                  <div className="text-gray-400 text-xs">{directoryHandle && permissionGranted && "No Images in Folder with missing OffsetTime in folder"}</div>
                 </div>
               </div>
-            )
-          ) : (
-            /* Gallery Section */
-            <div className="bg-gray-800/95 backdrop-blur-sm rounded-3xl p-4 md:p-8 shadow-2xl border border-gray-700 -mx-4 md:mx-0">
-              {/* Gallery Header */}
-              <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-8 gap-4">
-                <div>
-                  <p className="text-gray-400">
-                    {images.length} photos found that need OffsetTime fix.
-                  </p>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Click on photos to automatically set OffsetTime to {offsetTime}
-                  </p>
-                </div>
-                <button
-                  className="bg-gray-700 hover:bg-gray-600 text-gray-200 px-4 py-2 rounded-full font-semibold transition-all duration-300 hover:scale-105 hover:shadow-lg border border-gray-600"
-                  onClick={() => {
-                    setImages([])
-                  }}
-                >
-                  Choose Different Folder
-                </button>
-              </div>
-
-              {/* Loading State */}
-              {isLoading && (
-                <div className="text-center py-8">
-                  <div className="w-12 h-12 border-4 border-gray-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                  <p className="text-gray-400">Loading images...</p>
-                </div>
-              )}
-
-              {/* Image Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
-                {images.map((image) => {
-                  const exifStatus = getExifStatus(image)
-                  const canProcess = !image.exif?.OffsetTime
-
-                  return (
-                    <div
-                      key={image.id}
-                      className={`relative group cursor-pointer transition-all duration-300 hover:scale-105 ${canProcess ? 'hover:ring-4 hover:ring-emerald-500 hover:ring-offset-2 hover:ring-offset-gray-800' : ''
-                        }`}
-                      onClick={() => canProcess && handleImageClick(image)}
+            ) : (
+              /* Gallery Section */
+              <div className="bg-gray-800/95 backdrop-blur-sm rounded-3xl p-4 md:p-8 shadow-2xl border border-gray-700 -mx-4 md:mx-0">
+                {/* Gallery Header */}
+                <div className="flex flex-col justify-between items-center mb-6 gap-4">
+                  <div>
+                    <p className="text-gray-400">
+                      {images.length} photos found that need OffsetTime fix.
+                    </p>
+                    <p className="text-sm text-gray-500 mt-1">
+                      Click photos to select, then apply OffsetTime {offsetTime}
+                    </p>
+                  </div>
+                  <div className="flex flex-col sm:flex-row justify-center gap-3 w-full">
+                    <button
+                      className="bg-emerald-600 text-white px-4 py-2 rounded-full font-semibold disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
+                      onClick={applyOffsetToSelected}
+                      disabled={selectedIds.size === 0}
+                      title={selectedIds.size === 0 ? 'Select images first' : 'Apply offset to selected'}
                     >
-                      <div className={`aspect-square rounded-2xl overflow-hidden bg-gray-900 shadow-lg hover:shadow-xl transition-shadow duration-300 border border-gray-700 ${canProcess ? 'cursor-pointer' : 'cursor-not-allowed opacity-75'
-                        }`}>
-                        <img
-                          src={image.url}
-                          alt={image.name}
-                          loading="lazy"
-                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
-                        />
-                        {/* Image Overlay */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                          <div className="absolute bottom-0 left-0 right-0 p-4 text-gray-100">
-                            <div className="text-sm font-semibold truncate">
-                              {image.name}
+                      Apply Offset to Selected ({selectedIds.size})
+                    </button>
+                    <button
+                      className="bg-gray-700 text-gray-200 px-4 py-2 rounded-full font-semibold border border-gray-600 w-full sm:w-auto"
+                      onClick={() => {
+                        showFolderSelector()
+                      }}
+                    >
+                      Choose Different Folder
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
+                  {images.map((image) => {
+                    const exifStatus = getExifStatus(image)
+                    const canProcess = !image.exif?.OffsetTime
+                    const isSelected = selectedIds.has(image.id)
+
+                    return (
+                      <div
+                        key={image.id}
+                        className={`relative group`}
+                        onClick={() => canProcess && toggleSelect(image)}
+                      >
+                        <div className={`aspect-square rounded-2xl overflow-hidden bg-gray-900 shadow-lg border border-gray-700 ${canProcess ? 'cursor-pointer' : 'cursor-not-allowed opacity-75'
+                          }`}>
+                          <img
+                            src={image.url}
+                            alt={image.name}
+                            loading="lazy"
+                            className="w-full h-full object-cover"
+                          />
+                          {canProcess && (
+                            <div className={`absolute top-3 right-3 w-5 h-5 rounded-full border-2 ${isSelected ? 'bg-emerald-500 border-emerald-500' : 'border-gray-400'} flex items-center justify-center text-[10px] font-bold text-gray-900`}>
+                              {isSelected ? '✓' : ''}
                             </div>
-                            <div className="text-xs opacity-80">
-                              {(image.size / 1024 / 1024).toFixed(1)} MB
+                          )}
+                          {/* EXIF Status Indicator */}
+                          {exifStatus.status === 'no-offset' && (
+                            <div className="absolute top-3 left-3 w-6 h-6 bg-amber-500 text-gray-900 rounded-full flex items-center justify-center text-xs font-bold shadow-lg">
+                              ⚠
                             </div>
-                            <div className="text-xs opacity-80">
-                              {formatLastModified(image.lastModified)}
+                          )}
+                          {exifStatus.status === 'has-offset' && (
+                            <div className="absolute top-3 left-3 w-6 h-6 bg-emerald-500 text-gray-900 rounded-full flex items-center justify-center text-xs font-bold shadow-lg">
+                              ✓
                             </div>
-                            <div className={`text-xs ${exifStatus.color} font-medium`}>
-                              {exifStatus.text}
-                            </div>
-                            {canProcess && (
-                              <div className="text-xs text-emerald-300 font-medium mt-1">
-                                Click to set OffsetTime to {offsetTime}
-                              </div>
-                            )}
-                          </div>
+                          )}
                         </div>
-                        {/* EXIF Status Indicator */}
-                        {exifStatus.status === 'no-offset' && (
-                          <div className="absolute top-3 left-3 w-6 h-6 bg-amber-500 text-gray-900 rounded-full flex items-center justify-center text-xs font-bold shadow-lg">
-                            ⚠
-                          </div>
-                        )}
-                        {exifStatus.status === 'has-offset' && (
-                          <div className="absolute top-3 left-3 w-6 h-6 bg-emerald-500 text-gray-900 rounded-full flex items-center justify-center text-xs font-bold shadow-lg">
-                            ✓
-                          </div>
-                        )}
                       </div>
-                    </div>
-                  )
-                })}
+                    )
+                  })}
+                </div>
               </div>
-            </div>
-          )}
-        </main>
+            )}
+          </main>
+        )}
         <footer className="text-center text-gray-400 text-sm mt-8 bottom-0 inset-x-0">
           <a href="https://render.com" className="text-blue-300 hover:text-blue-200 transition">Deployed on Render</a> and <a href="https://heyoncall.com" className="text-blue-300 hover:text-blue-200 transition">Monitored with HeyOnCall</a>.
         </footer>
-      </div>
-    </div>
+      </div >
+    </div >
   )
 }
 
