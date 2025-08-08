@@ -1,0 +1,21 @@
+{
+  "name": "EXIF OffsetTime Fixer",
+  "short_name": "EXIF OffsetTime Fixer",
+  "description": "A web app to fix EXIF timezone offset data in image files",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#111827",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
