@@ -297,6 +297,7 @@ function App() {
   const clearSelection = () => setSelectedIds(new Set())
 
   const applyOffsetToSelected = async () => {
+    setIsLoading(true)
     if (selectedIds.size === 0) return
     try {
       // Process selected images sequentially for stability
